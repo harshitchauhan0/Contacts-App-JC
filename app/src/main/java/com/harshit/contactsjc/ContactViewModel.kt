@@ -11,17 +11,14 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.util.HashSet
 
 class ContactViewModel(application: Application) : AndroidViewModel(application) {
-    companion object{
-        private val PROJECTION = arrayOf(
-            ContactsContract.CommonDataKinds.Phone.CONTACT_ID,
-            ContactsContract.Contacts.DISPLAY_NAME,
-            ContactsContract.CommonDataKinds.Phone.NUMBER
-        )
-    }
+
+    private val contactRepository = ContactRepository(application)
+
 
     private val _item : MutableState<ContactModel?> = mutableStateOf(null)
     val item: State<ContactModel?> = _item
@@ -30,38 +27,22 @@ class ContactViewModel(application: Application) : AndroidViewModel(application)
         _item.value = contact
     }
 
+    private val _expand = MutableLiveData(false)
+    val expand: LiveData<Boolean> = _expand
+
+    fun setExpand(value: Boolean) {
+        _expand.value = value
+    }
+
     private val _contactListLiveData = MutableLiveData<List<ContactModel>>()
     val contactListLiveData: LiveData<List<ContactModel>> get() = _contactListLiveData
 
-     fun getContactList() {
+    fun getContacts(){
         viewModelScope.launch {
-            val cr: ContentResolver = getApplication<Application>().contentResolver
-            val cursor: Cursor? = cr.query(
-                ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-                PROJECTION,
-                null,
-                null,
-                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " ASC"
-            )
+            try {
+                _contactListLiveData.value =  contactRepository.getContacts()
+            }catch (_:Exception){
 
-            cursor?.use {
-                val mobileNoSet = HashSet<String>()
-                val contacts = mutableListOf<ContactModel>()
-                val nameIndex: Int = it.getColumnIndex(ContactsContract.Contacts.DISPLAY_NAME)
-                val numberIndex: Int = it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
-
-                var name: String
-                var number: String
-                while (it.moveToNext()) {
-                    name = it.getString(nameIndex)
-                    number = it.getString(numberIndex)
-                    number = number.replace(" ", "")
-                    if (!mobileNoSet.contains(number)) {
-                        contacts.add(ContactModel(name, number))
-                        mobileNoSet.add(number)
-                    }
-                }
-                _contactListLiveData.postValue(contacts)
             }
         }
     }
