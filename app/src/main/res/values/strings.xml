@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">ContactsJC</string>
+    <string name="add_button">"Add Contact"</string>
+    <string name="save_button">"Save"</string>
+    <string name="phone_label">"Enter Phone Number"</string>
+    <string name="name_lable">"Enter Name"</string>
 </resources>

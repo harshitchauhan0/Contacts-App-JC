@@ -1,15 +1,7 @@
 package com.harshit.contactsjc
 
-import android.content.ContentProviderOperation
-import android.content.OperationApplicationException
 import android.content.pm.PackageManager
 import android.os.Bundle
-import android.os.RemoteException
-import android.provider.ContactsContract
-import android.provider.ContactsContract.CommonDataKinds.Phone
-import android.provider.ContactsContract.CommonDataKinds.StructuredName
-import android.provider.ContactsContract.RawContacts
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
@@ -45,73 +37,34 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.harshit.contactsjc.ui.theme.ContactsJCTheme
 
 class MainActivity : ComponentActivity() {
     private val contactViewModel: ContactViewModel by viewModels()
-
-    companion object{
-        private const val TAG = "TAG"
-    }
-
     private val requestWriteContactPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()){}
-
     private fun checkWriteContactPermission() {
-        if(ContextCompat.checkSelfPermission(this@MainActivity,android.Manifest.permission.WRITE_CONTACTS) == PackageManager.PERMISSION_GRANTED){
+        if(ContextCompat.checkSelfPermission(this@MainActivity,android.Manifest.permission.WRITE_CONTACTS) != PackageManager.PERMISSION_GRANTED){
             requestWriteContactPermission.launch(android.Manifest.permission.WRITE_CONTACTS)
         }
     }
-
     private fun addContact(name: String,phoneNumber: String){
-        val ops = ArrayList<ContentProviderOperation>()
-        val rawContactInsertIndex = ops.size
-
-        ops.add(
-            ContentProviderOperation.newInsert(RawContacts.CONTENT_URI)
-                .withValue(RawContacts.ACCOUNT_TYPE, null)
-                .withValue(RawContacts.ACCOUNT_NAME, null).build()
-        )
-        ops.add(
-            ContentProviderOperation
-                .newInsert(ContactsContract.Data.CONTENT_URI)
-                .withValueBackReference(ContactsContract.Data.RAW_CONTACT_ID, rawContactInsertIndex)
-                .withValue(ContactsContract.Data.MIMETYPE, StructuredName.CONTENT_ITEM_TYPE)
-                .withValue(StructuredName.DISPLAY_NAME, name)
-                .build()
-        )
-        ops.add(
-            ContentProviderOperation
-                .newInsert(ContactsContract.Data.CONTENT_URI)
-                .withValueBackReference(
-                    ContactsContract.Data.RAW_CONTACT_ID, rawContactInsertIndex
-                )
-                .withValue(ContactsContract.Data.MIMETYPE, Phone.CONTENT_ITEM_TYPE)
-                .withValue(Phone.NUMBER, phoneNumber)
-                .withValue(Phone.TYPE, Phone.TYPE_MOBILE).build()
-        )
-
-        try {
-            contentResolver.applyBatch(ContactsContract.AUTHORITY, ops)
-            contactViewModel.getContacts()
-        } catch (e: RemoteException) {
-            Log.v(TAG, "${e.message}")
-        } catch (e: OperationApplicationException) {
-            Log.v(TAG, "${e.message}")
-        }
+        contactViewModel.saveContact(name,phoneNumber)
     }
-
     private fun checkReadContactPermission() {
         if (ContextCompat.checkSelfPermission(
                 this,
@@ -125,7 +78,6 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         contactViewModel.getContacts()
     }
-
     private lateinit var expand: MutableState<Boolean>
     private val requestReadContactPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
         if (isGranted) {
@@ -134,7 +86,6 @@ class MainActivity : ComponentActivity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         checkReadContactPermission()
         checkWriteContactPermission()
         setContent {
@@ -154,8 +105,8 @@ class MainActivity : ComponentActivity() {
                     onClickItem = {
                         contactViewModel.setItem(it)
                     },
-                    onAddContact = {
-                        addContact(name = "",phoneNumber = "")
+                    onAddContact = {name,phoneNumber->
+                        addContact(name = name,phoneNumber = phoneNumber)
                     },
                     onExpandChange = {
                         contactViewModel.setExpand(it)
@@ -163,7 +114,6 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
-
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 if (expand.value) {
@@ -177,17 +127,17 @@ class MainActivity : ComponentActivity() {
     }
 
 }
-
-@Preview(showBackground = true, showSystemUi = true)
 @Composable
-fun GreetingPreview() {
-    ContactsJCTheme {
-        AddContactView(onExpandChange = {})
+fun AddContactView(onExpandChange: (flag: Boolean) -> Unit,onAddContact:(name: String,phoneNumber: String)->Unit) {
+    var name by rememberSaveable {
+        mutableStateOf("")
     }
-}
-
-@Composable
-fun AddContactView(onExpandChange: (flag: Boolean) -> Unit) {
+    var phoneNumber by rememberSaveable {
+        mutableStateOf("")
+    }
+    var phoneNumberCheck by rememberSaveable {
+        mutableStateOf(false)
+    }
     Box (
         Modifier.fillMaxSize(),
         contentAlignment = Alignment.BottomCenter
@@ -197,38 +147,54 @@ fun AddContactView(onExpandChange: (flag: Boolean) -> Unit) {
             ,shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp)
         ) {
             Column(modifier = Modifier
-                .fillMaxWidth().padding(8.dp),
+                .fillMaxWidth()
+                .padding(8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally) {
                 Row(modifier = Modifier
                     .fillMaxWidth()
                     .padding(start = 20.dp, top = 6.dp)) {
-                    Text(text = "Add Contact",
+                    Text(text = stringResource(id = R.string.add_button),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
                 }
-                TextField(value = "", onValueChange = {},
+                TextField(value = name, onValueChange = {
+                      name = it.trim()
+                },
                     label = {
-                            Text(text = "Enter Name")
+                            Text(text = stringResource(id = R.string.name_lable))
                     },
                     modifier = Modifier
                         .fillMaxWidth(0.9f)
-                        .padding(vertical = 10.dp)
+                        .padding(vertical = 10.dp),
+                    singleLine = true
                 )
-                TextField(value = "", onValueChange = {},
+                TextField(value = phoneNumber, onValueChange = {
+                     phoneNumber = it.trim()
+                },
                     label = {
-                        Text(text = "Enter Phone Number")
+                        Text(text = stringResource(id = R.string.phone_label))
                     },
                     modifier = Modifier
                         .fillMaxWidth(0.9f)
-                        .padding(vertical = 10.dp)
+                        .padding(vertical = 10.dp),
+                    singleLine = true,
+                    isError = phoneNumberCheck
                 )
                 Box(modifier = Modifier.fillMaxWidth(),
                     contentAlignment = Alignment.BottomEnd){
                     Button(onClick = {
-                        onExpandChange(false)
+                        val phoneNumberLast = phoneNumber.trim().takeLast(10)
+                        val digit = phoneNumberLast.all { it.isDigit() }
+                        phoneNumberCheck = if(phoneNumberLast.length == 10 && digit){
+                            onExpandChange(false)
+                            onAddContact(name,phoneNumber)
+                            false
+                        } else{
+                            true
+                        }
                     }, colors = ButtonDefaults.buttonColors(Color.DarkGray)) {
-                        Text(text = "Save")
+                        Text(text = stringResource(id = R.string.save_button))
                     }
                 }
             }
@@ -238,14 +204,14 @@ fun AddContactView(onExpandChange: (flag: Boolean) -> Unit) {
 }
 
 @Composable
-fun ContactList(expand: MutableState<Boolean>,contactList: SnapshotStateList<ContactModel>,item: ContactModel?,onClickItem:(model: ContactModel)->Unit,onAddContact:()->Unit,onExpandChange:(flag: Boolean)->Unit) {
+fun ContactList(expand: MutableState<Boolean>,contactList: SnapshotStateList<ContactModel>,item: ContactModel?,onClickItem:(model: ContactModel)->Unit,onAddContact:(name: String,phoneNumber: String)->Unit,onExpandChange:(flag: Boolean)->Unit) {
     val scrollState = rememberScaffoldState()
 
     Scaffold(
         scaffoldState = scrollState,
         topBar = {
             TopAppBar(
-                title = { Text(text = "My App") }
+                title = { Text(text = stringResource(id = R.string.app_name)) }
             )
         },
         floatingActionButton = {
@@ -255,7 +221,7 @@ fun ContactList(expand: MutableState<Boolean>,contactList: SnapshotStateList<Con
                 }) {
                     Image(
                         painter = painterResource(id = R.drawable.baseline_add_24),
-                        contentDescription = "Add Button"
+                        contentDescription = stringResource(id = R.string.add_button)
                     )
                 }
             }
@@ -282,7 +248,7 @@ fun ContactList(expand: MutableState<Boolean>,contactList: SnapshotStateList<Con
                 targetOffsetY = { fullHeight -> fullHeight },
             )
         ) {
-            AddContactView(onExpandChange)
+            AddContactView(onExpandChange,onAddContact)
         }
     }
 }
